@@ -462,6 +462,7 @@ function activate(context) {
                         if (this.selectedProfile === msg.profile) {
                             this.selectedProfile = 'Dashboard';
                         }
+                        clearProfilesCache();
                         updateProfileButtons();
                         await this.update(mgr);
                     }
@@ -1167,20 +1168,36 @@ function activate(context) {
     }
 
     /**
-     * Get list of saved profiles
+     * Get list of saved profiles (Cached)
      */
-    async function getProfiles() {
+    let profilesCache = null;
+    let lastProfilesFetch = 0;
+    const PROFILES_CACHE_TTL = 30000; // 30 seconds
+
+    async function getProfiles(force = false) {
+        const now = Date.now();
+        if (!force && profilesCache && (now - lastProfilesFetch < PROFILES_CACHE_TTL)) {
+            return profilesCache;
+        }
+
         const result = await runProfileManager('List');
         try {
             const match = result.output.match(/\[[\s\S]*?\]/);
             if (match) {
                 const profiles = JSON.parse(match[0]);
-                return Array.isArray(profiles) ? profiles : [];
+                profilesCache = Array.isArray(profiles) ? profiles : [];
+                lastProfilesFetch = now;
+                return profilesCache;
             }
         } catch (e) {
             console.error('Error parsing profiles:', e);
         }
-        return [];
+        return profilesCache || [];
+    }
+
+    function clearProfilesCache() {
+        profilesCache = null;
+        lastProfilesFetch = 0;
     }
 
     /**
@@ -1514,6 +1531,7 @@ function activate(context) {
             if (result.success) {
                 setActiveProfile(profileName);
                 await quotaManager.fetchQuota();
+                clearProfilesCache();
                 updateProfileButtons();
             } else {
                 vscode.window.showErrorMessage(`Failed to save: ${result.error}`);
@@ -1542,6 +1560,7 @@ function activate(context) {
         }, async () => {
             const result = await runProfileManager('Delete', selected.label);
             if (result.success) {
+                clearProfilesCache();
                 updateProfileButtons();
             }
         });
@@ -1712,6 +1731,7 @@ function activate(context) {
                 const confirm = await vscode.window.showWarningMessage(`Delete "${selected.profileName}"?`, { modal: true }, 'Delete');
                 if (confirm === 'Delete') {
                     await runProfileManager('Delete', selected.profileName);
+                    clearProfilesCache();
                     updateProfileButtons();
                 }
             }
@@ -1759,6 +1779,7 @@ function activate(context) {
                     delete quotaManager.cache[oldName];
                     quotaManager.saveCache();
                 }
+                clearProfilesCache();
                 updateProfileButtons();
                 vscode.window.showInformationMessage(`Profile renamed to "${newName}"`);
                 return { success: true, newName: newName };
