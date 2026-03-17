@@ -107,6 +107,9 @@ function activate(context) {
             if (!data || !data.models || data.models.length === 0) return 'no data ';
 
             const models = data.models;
+            const allFull = models.every(m => m.remainingPercentage >= 98);
+            if (allFull) return '100% ';
+
             const findModel = (keywords, exclude = []) => {
                 return models.find(m => {
                     const n = (m.name || '').toLowerCase();
