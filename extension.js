@@ -650,8 +650,8 @@ function activate(context) {
                         border-radius: 50%;
                         margin-right: 10px;
                     }
-                    .row-active {
-                        border-left: 3px solid #7aa2f7;
+                    tr.row-active td:first-child {
+                        box-shadow: inset 3px 0 0 #7aa2f7;
                     }
                     .editable-title {
                         cursor: pointer;
@@ -730,14 +730,20 @@ function activate(context) {
                     <div class="tab ${this.selectedProfile === 'Dashboard' ? 'selected' : ''}" onclick="selectTab('Dashboard')">
                         📊 Dashboard
                     </div>
-                    ${profiles.map(p => {
-                        const pName = p.Name || p.name;
-                        const isCurrent = active && active.toLowerCase() === pName.toLowerCase();
-                        const isSelected = this.selectedProfile && this.selectedProfile.toLowerCase() === pName.toLowerCase();
-                        return `<div class="tab ${isSelected ? 'selected' : ''}" onclick="selectTab('${pName}')">
-                            ${isCurrent ? '<span class="active-indicator"></span>' : ''} ${pName}
-                        </div>`;
-                    }).join('')}
+                    ${profiles
+                        .map(p => ({ 
+                            name: p.Name || p.name, 
+                            score: mgr.getAvailabilityScore(p.Name || p.name) 
+                        }))
+                        .sort((a, b) => b.score - a.score)
+                        .map(p => {
+                            const pName = p.name;
+                            const isCurrent = active && active.toLowerCase() === pName.toLowerCase();
+                            const isSelected = this.selectedProfile && this.selectedProfile.toLowerCase() === pName.toLowerCase();
+                            return `<div class="tab ${isSelected ? 'selected' : ''}" onclick="selectTab('${pName}')">
+                                ${isCurrent ? '<span class="active-indicator"></span>' : ''} ${pName}
+                            </div>`;
+                        }).join('')}
                 </div>
                 <div class="content">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
@@ -770,8 +776,16 @@ function activate(context) {
                         
                         const resetable = data.models.filter(m => m.resetTime && m.remainingPercentage < 98);
                         if (resetable.length > 0) {
-                            nextReset = Math.min(...resetable.map(m => new Date(m.resetTime).getTime()));
-                            nextResetStr = mgr.formatDelta(new Date(nextReset).toISOString(), false);
+                            const times = resetable.map(m => new Date(m.resetTime).getTime());
+                            nextReset = Math.min(...times);
+                            const now = Date.now();
+                            if (nextReset > now) {
+                                nextResetStr = mgr.formatDelta(new Date(nextReset).toISOString(), false);
+                            } else {
+                                nextResetStr = 'Ready';
+                            }
+                        } else {
+                            nextResetStr = overallPct >= 95 ? 'Full' : 'Ready';
                         }
                     }
                     
@@ -806,7 +820,7 @@ function activate(context) {
                                 </td>
                                 <td>${s.isActive ? '<span style="color:#7aa2f7; font-size:0.8rem">ACTIVE</span>' : ''}</td>
                                 <td class="pct-cell" style="color:${color}">${Math.round(s.overallPct)}%</td>
-                                <td class="time-cell">${s.nextResetStr === 'Ready' ? '<span style="color:#565f89">Available</span>' : s.nextResetStr}</td>
+                                <td class="time-cell">${s.nextResetStr === 'Full' ? '<span style="color:#565f89">Available</span>' : (s.nextResetStr === 'Ready' ? '<span style="color:#7aa2f7">Ready</span>' : s.nextResetStr)}</td>
                                 <td class="actions-cell">
                                     ${!s.isActive ? `<button class="inline-switch-btn" onclick="switchAccount('${s.name}')">Switch</button>` : ''}
                                     ${this.deleteMode ? `<button class="remove-btn" onclick="deleteAccount('${s.name}')">Remove</button>` : ''}
@@ -849,7 +863,7 @@ function activate(context) {
                 html += '<p style="text-align:center; padding: 60px; color: #565f89; border: 1px dashed #24283b; border-radius: 12px;">No telemetry data available for this account.<br><br>Switch to it and perform a scan to collect details.</p>';
             }
 
-            if (!isActiveProfile && this.selectedProfile) {
+            if (!isActiveProfile && this.selectedProfile && this.selectedProfile !== 'Dashboard') {
                 html += `
                 <div class="actions">
                     <button class="switch-btn" onclick="switchAccount('${this.selectedProfile}')">🚀 Switch to this Account</button>
