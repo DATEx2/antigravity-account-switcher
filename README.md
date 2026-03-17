@@ -1,6 +1,5 @@
 # Antigravity Multi-Account Switcher
-
-**Version 2.0.0** - Final Release
+**Version 2.6.7** - Increased max profiles to 20
 
 Seamlessly switch between multiple Google accounts in Antigravity to bypass model rate limits without manual re-login.
 
@@ -78,7 +77,7 @@ Seamlessly switch between multiple Google accounts in Antigravity to bypass mode
 
 - Profile switching **restarts Antigravity** to apply changes
 - Each profile stores the complete authentication state
-- Maximum 5 profiles supported
+- Maximum 20 profiles supported
 
 ---
 

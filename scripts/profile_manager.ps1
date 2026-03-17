@@ -9,7 +9,7 @@
 .PARAMETER ProfileName
     The name of the profile (required for Save, Load, Delete)
 .PARAMETER MaxProfiles
-    Maximum number of profiles allowed (default: 5)
+    Maximum number of profiles allowed (default: 20)
 #>
 
 param(
@@ -21,7 +21,7 @@ param(
     [string]$ProfileName,
     
     [Parameter(Mandatory=$false)]
-    [int]$MaxProfiles = 5
+    [int]$MaxProfiles = 20
 )
 
 # Configuration
@@ -180,6 +180,27 @@ function List-Profiles {
     $result | ConvertTo-Json -Depth 3 -Compress
 }
 
+function Rename-Profile {
+    param([string]$OldName, [string]$NewName)
+    
+    $oldPath = Join-Path $ProfilesStorePath $OldName
+    $newPath = Join-Path $ProfilesStorePath $NewName
+    
+    if (-not (Test-Path $oldPath)) {
+        Write-Error "Profile '$OldName' not found"
+        exit 1
+    }
+    
+    if (Test-Path $newPath) {
+        Write-Error "Profile '$NewName' already exists"
+        exit 1
+    }
+    
+    Rename-Item -Path $oldPath -NewName $NewName -Force
+    Write-Host "Profile '$OldName' renamed to '$NewName'."
+    Write-Output @{ Success = $true; Message = "Profile renamed" } | ConvertTo-Json
+}
+
 # Execute action
 switch ($Action) {
     "Save" {
@@ -205,5 +226,12 @@ switch ($Action) {
             exit 1
         }
         Remove-Profile -Name $ProfileName
+    }
+    "Rename" {
+        if (-not $ProfileName -or -not $NewProfileName) {
+            Write-Error "Both ProfileName and NewProfileName are required for Rename action"
+            exit 1
+        }
+        Rename-Profile -OldName $ProfileName -NewName $NewProfileName
     }
 }
