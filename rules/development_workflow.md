@@ -10,3 +10,4 @@
 2. Update version and changelog summary in `README.md`.
 3. Create the new versioned folder in the extensions directory.
 4. Copy `extension.js`, `package.json`, and the `scripts/` folder to the new location.
+5. **Packaging**: To create a `.vsix`, run: `npx @vscode/vsce package --allow-star-activation --no-git-tag-version`.
