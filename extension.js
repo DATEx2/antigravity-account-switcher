@@ -845,9 +845,12 @@ function activate(context) {
                                 <td>${s.isActive ? '<span style="color:#7aa2f7; font-size:0.8rem">ACTIVE</span>' : ''}</td>
                                 <td class="pct-cell" style="color:${color}">${Math.round(s.overallPct)}%</td>
                                 <td class="time-cell">${s.nextResetStr === 'Full' ? '<span style="color:#565f89">Available</span>' : (s.nextResetStr === 'Ready' ? '<span style="color:#7aa2f7">Ready</span>' : s.nextResetStr)}</td>
-                                <td class="actions-cell">
-                                    ${!s.isActive ? `<button class="inline-switch-btn" onclick="switchAccount('${s.name}')">Switch</button>` : ''}
-                                    ${this.deleteMode ? `<button class="remove-btn" onclick="deleteAccount('${s.name}')">Remove</button>` : ''}
+                                <td>
+                                    <div class="actions-cell">
+                                        ${!s.isActive ? `<button class="inline-switch-btn" onclick="switchAccount('${s.name}')">Switch</button>` : ''}
+                                        ${this.deleteMode ? `<button class="remove-btn" onclick="deleteAccount('${s.name}')">Remove</button>` : ''}
+                                        ${s.isActive && !this.deleteMode ? '<span style="color:#565f89; font-size:0.85rem">Active Account</span>' : ''}
+                                    </div>
                                 </td>
                             </tr>`;
                         }).join('')}

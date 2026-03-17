@@ -1,5 +1,5 @@
 # Antigravity Multi-Account Switcher
-**Version 2.9.7** - Added email support for profiles
+**Version 2.9.8** - UI Polish and Bugfixes
 
 Seamlessly switch between multiple Google accounts in Antigravity to bypass model rate limits without manual re-login.
 
@@ -84,6 +84,11 @@ Seamlessly switch between multiple Google accounts in Antigravity to bypass mode
 ---
 
 ## Changelog
+
+### 2.9.8
+- Fixed visual bug in ACTIONS column for the active account
+- Added ACTIVE indicator for current account in dashboard
+- UI improvements for table rendering
 
 ### 2.9.7
 - Added ability to set and edit email for profiles
