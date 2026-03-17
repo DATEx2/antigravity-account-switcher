@@ -472,6 +472,9 @@ function activate(context) {
                         this.selectedProfile = result.newName;
                         await this.update(mgr);
                     }
+                } else if (msg.command === 'editEmail') {
+                    await vscode.commands.executeCommand('antigravity-switcher.setEmail', msg.profile);
+                    await this.update(mgr);
                 }
             });
 
@@ -631,10 +634,11 @@ function activate(context) {
                         letter-spacing: 0.05em;
                     }
                     td {
-                        padding: 15px;
+                        padding: 12px 15px;
                         border-bottom: 1px solid #24283b;
                         color: #c0caf5;
                         font-size: 0.95rem;
+                        vertical-align: middle;
                     }
                     tr:hover td {
                         background: #16161e;
@@ -655,17 +659,24 @@ function activate(context) {
                         margin-right: 10px;
                     }
                     tr.row-active td {
-                        background: #1e2237 !important;
+                        background: #1e2237;
                     }
                     tr.row-active td:first-child {
-                        border-left: 3px solid #7aa2f7;
+                        box-shadow: inset 3px 0 0 #7aa2f7;
                     }
-                    .editable-title {
+                    .editable-title:hover {
+                        color: #7aa2f7;
+                        border-bottom-color: #7aa2f7;
+                    }
+                    .editable-email {
+                        font-size: 0.75rem;
+                        color: #565f89;
                         cursor: pointer;
+                        display: inline-block;
                         border-bottom: 1px dashed transparent;
                         transition: all 0.2s;
                     }
-                    .editable-title:hover {
+                    .editable-email:hover {
                         color: #7aa2f7;
                         border-bottom-color: #7aa2f7;
                     }
@@ -826,7 +837,9 @@ function activate(context) {
                                     ${s.isActive ? '<span class="status-dot" style="background:#22c55e; box-shadow:0 0 5px #22c55e"></span>' : '<span class="status-dot" style="background:#414868"></span>'}
                                     <div style="display:inline-block; vertical-align:middle">
                                         <div style="${s.isActive ? 'font-weight:bold; color:#ffffff' : ''}">${s.name}</div>
-                                        ${s.email ? `<div style="font-size:0.75rem; color:#565f89">${s.email}</div>` : ''}
+                                        <div class="editable-email" title="Click to edit email" onclick="editEmail('${s.name}')">
+                                            ${s.email || 'No email set'}
+                                        </div>
                                     </div>
                                 </td>
                                 <td>${s.isActive ? '<span style="color:#7aa2f7; font-size:0.8rem">ACTIVE</span>' : ''}</td>
@@ -899,6 +912,9 @@ function activate(context) {
                     }
                     function deleteAccount(name) {
                         vscode.postMessage({ command: 'deleteAccount', profile: name });
+                    }
+                    function editEmail(name) {
+                        vscode.postMessage({ command: 'editEmail', profile: name });
                     }
                     function renameAccount(name) {
                         vscode.postMessage({ command: 'renameAccount', profile: name });
@@ -1811,6 +1827,26 @@ function activate(context) {
         vscode.commands.executeCommand('antigravity-switcher.manageUsers');
     });
     context.subscriptions.push(listProfilesCmd);
+
+    // Command: Set Email (New)
+    const setEmailCmd = vscode.commands.registerCommand('antigravity-switcher.setEmail', async (profileName) => {
+        if (!profileName) return;
+        
+        const email = await vscode.window.showInputBox({
+            prompt: `Set email for profile "${profileName}"`,
+            placeHolder: 'e.g. user@gmail.com'
+        });
+        
+        if (email === undefined) return;
+        
+        const result = await runProfileManager('SetEmail', profileName, '', email);
+        if (result.success) {
+            clearProfilesCache();
+            updateProfileButtons();
+            vscode.window.showInformationMessage(`Email updated for profile "${profileName}"`);
+        }
+    });
+    context.subscriptions.push(setEmailCmd);
 
     // Register explicit switch command (for webview and tooltip)
     const switchExplicitCmd = vscode.commands.registerCommand('antigravity-switcher.switchAccountExplicit', async (profileName) => {

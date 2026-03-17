@@ -224,6 +224,19 @@ function Rename-Profile {
     Write-Output @{ Success = $true; Message = "Profile renamed" } | ConvertTo-Json
 }
 
+function Set-Email {
+    param([string]$Name, [string]$Email)
+    $path = Join-Path $ProfilesStorePath $Name
+    if (-not (Test-Path $path)) {
+        Write-Error "Profile '$Name' not found"
+        exit 1
+    }
+    $info = @{ Email = $Email }
+    $info | ConvertTo-Json | Out-File (Join-Path $path "profile_info.json") -Encoding utf8
+    Write-Host "Email updated for profile '$Name'."
+    Write-Output @{ Success = $true; Message = "Email updated" } | ConvertTo-Json
+}
+
 # Execute action
 switch ($Action) {
     "Save" {
@@ -231,7 +244,14 @@ switch ($Action) {
             Write-Error "ProfileName is required for Save action"
             exit 1
         }
-        Save-Profile -Name $ProfileName
+        Save-Profile -Name $ProfileName -Email $Email
+    }
+    "SetEmail" {
+        if (-not $ProfileName) {
+            Write-Error "ProfileName is required for SetEmail action"
+            exit 1
+        }
+        Set-Email -Name $ProfileName -Email $Email
     }
     "Load" {
         if (-not $ProfileName) {
