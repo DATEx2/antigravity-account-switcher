@@ -2,23 +2,28 @@
 .SYNOPSIS
     Antigravity Profile Manager - Manages user profiles for account switching
 .DESCRIPTION
-    This script handles saving, loading, listing, and deleting Antigravity profiles.
+    This script handles saving, loading, listing, deleting, and renaming Antigravity profiles.
     Each profile is a copy of the User Data directory containing authentication state.
 .PARAMETER Action
-    The action to perform: Save, Load, List, Delete
+    The action to perform: Save, Load, List, Delete, Rename
 .PARAMETER ProfileName
-    The name of the profile (required for Save, Load, Delete)
+    The name of the profile (required for Save, Load, Delete, Rename)
+.PARAMETER NewProfileName
+    The new name for the profile (required for Rename)
 .PARAMETER MaxProfiles
     Maximum number of profiles allowed (default: 20)
 #>
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet("Save", "Load", "List", "Delete")]
+    [ValidateSet("Save", "Load", "List", "Delete", "Rename")]
     [string]$Action,
     
     [Parameter(Mandatory=$false)]
     [string]$ProfileName,
+    
+    [Parameter(Mandatory=$false)]
+    [string]$NewProfileName,
     
     [Parameter(Mandatory=$false)]
     [int]$MaxProfiles = 20
