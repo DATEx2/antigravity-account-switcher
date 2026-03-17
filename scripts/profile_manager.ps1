@@ -24,6 +24,9 @@ param(
     
     [Parameter(Mandatory=$false)]
     [string]$NewProfileName,
+
+    [Parameter(Mandatory=$false)]
+    [string]$Email,
     
     [Parameter(Mandatory=$false)]
     [int]$MaxProfiles = 20
@@ -44,8 +47,17 @@ function Get-Profiles {
     $profiles = @()
     if (Test-Path $ProfilesStorePath) {
         Get-ChildItem -Path $ProfilesStorePath -Directory | ForEach-Object {
+            $infoFile = Join-Path $_.FullName "profile_info.json"
+            $email = ""
+            if (Test-Path $infoFile) {
+                try {
+                    $info = Get-Content $infoFile | ConvertFrom-Json
+                    $email = $info.Email
+                } catch {}
+            }
             $profiles += @{
                 Name = $_.Name
+                Email = $email
                 Created = $_.CreationTime.ToString("yyyy-MM-dd HH:mm")
                 Size = [math]::Round((Get-ChildItem $_.FullName -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB, 2)
             }
@@ -55,7 +67,7 @@ function Get-Profiles {
 }
 
 function Save-Profile {
-    param([string]$Name)
+    param([string]$Name, [string]$Email)
     
     # Validate profile name
     if ($Name -match '[\\/:*?"<>|]') {
@@ -88,6 +100,12 @@ function Save-Profile {
     # Copy User Data to profile
     Write-Host "Saving profile '$Name'..."
     Copy-Item -Path $UserDataPath -Destination $targetPath -Recurse -Force
+
+    # Save extra info
+    if ($Email) {
+        $info = @{ Email = $Email }
+        $info | ConvertTo-Json | Out-File (Join-Path $targetPath "profile_info.json") -Encoding utf8
+    }
     
     Write-Host "Profile '$Name' saved successfully."
     Write-Output @{ Success = $true; Message = "Profile saved" } | ConvertTo-Json

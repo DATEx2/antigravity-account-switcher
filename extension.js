@@ -654,8 +654,11 @@ function activate(context) {
                         border-radius: 50%;
                         margin-right: 10px;
                     }
+                    tr.row-active td {
+                        background: #1e2237 !important;
+                    }
                     tr.row-active td:first-child {
-                        box-shadow: inset 3px 0 0 #7aa2f7;
+                        border-left: 3px solid #7aa2f7;
                     }
                     .editable-title {
                         cursor: pointer;
@@ -793,14 +796,15 @@ function activate(context) {
                         }
                     }
                     
-                    return { name, overallPct, nextReset, nextResetStr, isActive };
+                    return { name, email: p.Email || '', overallPct, nextReset, nextResetStr, isActive };
                 });
                 
-                // Sort by next reset time (Ready/Infinity goes to top if we want to show available accounts first, 
-                // but user said 'sorted by reset date'. Usually means earliest reset first.
-                // However, 'Ready' means it is ALREADY available right now. 
-                // Let's put Ready first, then sort by date.
-                stats.sort((a, b) => a.nextReset - b.nextReset);
+                // Sort by Overall % (Descending) then Next Reset (Ascending)
+                stats.sort((a, b) => {
+                    const pctDiff = Math.round(b.overallPct) - Math.round(a.overallPct);
+                    if (pctDiff !== 0) return pctDiff;
+                    return a.nextReset - b.nextReset;
+                });
                 
                 html += `
                 <table>
@@ -820,7 +824,10 @@ function activate(context) {
                             <tr class="${s.isActive ? 'row-active' : ''}" onclick="if(!event.target.closest('button')) selectTab('${s.name}')" style="cursor:pointer">
                                 <td>
                                     ${s.isActive ? '<span class="status-dot" style="background:#22c55e; box-shadow:0 0 5px #22c55e"></span>' : '<span class="status-dot" style="background:#414868"></span>'}
-                                    <span style="${s.isActive ? 'font-weight:bold; color:#ffffff' : ''}">${s.name}</span>
+                                    <div style="display:inline-block; vertical-align:middle">
+                                        <div style="${s.isActive ? 'font-weight:bold; color:#ffffff' : ''}">${s.name}</div>
+                                        ${s.email ? `<div style="font-size:0.75rem; color:#565f89">${s.email}</div>` : ''}
+                                    </div>
                                 </td>
                                 <td>${s.isActive ? '<span style="color:#7aa2f7; font-size:0.8rem">ACTIVE</span>' : ''}</td>
                                 <td class="pct-cell" style="color:${color}">${Math.round(s.overallPct)}%</td>
@@ -1142,7 +1149,7 @@ function activate(context) {
     /**
      * Execute PowerShell script with given arguments
      */
-    function runProfileManager(action, profileName = '', newProfileName = '') {
+    function runProfileManager(action, profileName = '', newProfileName = '', email = '') {
         return new Promise((resolve) => {
             const config = vscode.workspace.getConfiguration('antigravitySwitcher');
             const maxProfiles = config.get('maxProfiles', 20);
@@ -1153,6 +1160,9 @@ function activate(context) {
             }
             if (newProfileName) {
                 args += ` -NewProfileName "${newProfileName}"`;
+            }
+            if (email) {
+                args += ` -Email "${email}"`;
             }
             
             const command = `powershell -ExecutionPolicy Bypass -File "${scriptPath}" ${args}`;
@@ -1522,12 +1532,17 @@ function activate(context) {
 
         if (!profileName) return;
 
+        const email = await vscode.window.showInputBox({
+            prompt: 'Enter email address for this account (optional)',
+            placeHolder: 'Email address'
+        });
+
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Saving profile "${profileName}"...`,
             cancellable: false
         }, async () => {
-            const result = await runProfileManager('Save', profileName);
+            const result = await runProfileManager('Save', profileName, '', email);
             if (result.success) {
                 setActiveProfile(profileName);
                 await quotaManager.fetchQuota();
