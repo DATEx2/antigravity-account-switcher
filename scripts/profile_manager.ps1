@@ -179,8 +179,10 @@ function Switch-Profile {
     
     # Restart Antigravity
     Write-Host "Restarting Antigravity..."
-    Start-Sleep -Seconds 2
-    Start-Process "explorer.exe" -ArgumentList "`"$exePath`""
+    Start-Sleep -Seconds 3
+    
+    # Launch Antigravity directly (not through explorer)
+    Start-Process -FilePath $exePath -ErrorAction SilentlyContinue
     
     Write-Host "Account switched to '$Name' successfully. Settings and history were preserved."
     @{ Success = $true; Message = "Account switched"; Restarted = $true } | ConvertTo-Json -Compress
