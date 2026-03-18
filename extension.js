@@ -741,6 +741,7 @@ function activate(context) {
                         display: flex;
                         background: #16161e;
                         border-bottom: 1px solid #414868;
+                        align-items: flex-end;
                     }
                     .tabs-scrollable {
                         display: flex;
@@ -780,14 +781,13 @@ function activate(context) {
                     }
                     .tab-fixed {
                         flex: 0 0 auto;
-                        background: #16161e;
+                        background: #16161e !important;
                         border-right: 1px solid #414868;
                         z-index: 100;
                         box-shadow: 10px 0 15px -5px rgba(0,0,0,0.5);
-                        padding: 0 20px !important;
+                        padding: 10px 20px 0 20px;
                         display: flex;
                         align-items: flex-end;
-                        background: #16161e !important;
                     }
                     .tab-fixed .tab {
                         border-right: none;
@@ -1093,6 +1093,7 @@ function activate(context) {
                             ` : ''}
                             <button class="btn-icon" title="Add Account" onclick="addAccount()">+</button>
                             <button class="btn-icon ${this.deleteMode ? 'active' : ''}" title="Toggle Remove Mode" onclick="toggleDeleteMode()">-</button>
+                            ${!isActiveProfile && this.selectedProfile && this.selectedProfile !== 'Dashboard' ? `<button class="switch-btn" style="margin-left:8px" onclick="switchAccount('${this.selectedProfile}')">🚀 Switch</button>` : ''}
                         </div>
                     </div>
             `;
@@ -1181,12 +1182,7 @@ function activate(context) {
                 html += '<p style="text-align:center; padding: 60px; color: #565f89; border: 1px dashed #24283b; border-radius: 12px;">No telemetry data available for this account.<br><br>Switch to it and perform a scan to collect details.</p>';
             }
 
-            if (!isActiveProfile && this.selectedProfile && this.selectedProfile !== 'Dashboard') {
-                html += `
-                <div class="actions">
-                    <button class="switch-btn" onclick="switchAccount('${this.selectedProfile}')">🚀 Switch to this Account</button>
-                </div>`;
-            }
+
 
             html += `
                 </div>
