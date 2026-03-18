@@ -1063,8 +1063,10 @@ function activate(context) {
             </head>
             <body>
                 <div class="tabs-container">
-                    <div class="tab tab-fixed ${this.selectedProfile === 'Dashboard' ? 'selected' : ''}" onclick="selectTab('Dashboard')">
-                        📊 Dashboard
+                    <div class="tab-fixed">
+                        <div class="tab ${this.selectedProfile === 'Dashboard' ? 'selected' : ''}" onclick="selectTab('Dashboard')">
+                            📊 Dashboard
+                        </div>
                     </div>
                     <div class="tabs-scrollable" onwheel="if (event.deltaY !== 0) { this.scrollLeft += event.deltaY; event.preventDefault(); }">
                         ${profiles
