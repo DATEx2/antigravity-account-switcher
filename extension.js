@@ -591,6 +591,8 @@ function activate(context) {
                 } else if (msg.command === 'editEmail') {
                     await vscode.commands.executeCommand('antigravity-switcher.setEmail', msg.profile);
                     await this.update(mgr);
+                } else if (msg.command === 'refreshData') {
+                    await this.update(mgr);
                 } else if (msg.command === 'sort') {
                     if (this.sortColumn === msg.column) {
                         this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
@@ -817,28 +819,53 @@ function activate(context) {
                         align-items: center;
                         gap: 10px;
                     }
-                    .model-row { margin-bottom: 12px; }
+                    .model-box {
+                        border: 1px solid rgba(255,255,255,0.06);
+                        border-radius: 8px;
+                        padding: 24px;
+                        background: rgba(255,255,255,0.02);
+                        margin-top: 20px;
+                    }
+                    .model-box-title {
+                        color: #787c99;
+                        font-size: 0.8rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                        margin-bottom: 24px;
+                        font-weight: 600;
+                    }
+                    .model-row { margin-bottom: 24px; }
+                    .model-row:last-child { margin-bottom: 0; }
                     .header { 
                         display: flex; 
                         justify-content: space-between; 
-                        align-items: flex-end;
-                        margin-bottom: 4px;
+                        align-items: center;
+                        margin-bottom: 12px;
                     }
-                    .model-name { font-weight: 500; font-size: 0.95rem; color: #c0caf5; }
-                    .percentage { font-weight: 600; font-size: 0.95rem; color: #ffffff; }
-                    .bar-container { 
-                        height: 4px; 
-                        background: #24283b; 
-                        border-radius: 2px; 
-                        overflow: hidden;
-                        margin-bottom: 3px;
+                    .model-name { font-weight: 500; font-size: 1.05rem; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
+                    .warning-icon { color: #f59e0b; font-size: 0.9rem; }
+                    .reset-text { font-size: 0.95rem; color: #94a3b8; }
+                    .segments-container {
+                        display: flex;
+                        gap: 6px;
+                        height: 4px;
+                        width: 100%;
                     }
-                    .bar { 
-                        height: 100%; 
-                        transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+                    .segment {
+                        flex: 1;
+                        background: rgba(255,255,255,0.08); /* Empty segment */
                         border-radius: 2px;
+                        transition: background 0.3s;
                     }
-                    .reset-text { font-size: 0.78rem; color: #565f89; }
+                    .segment.filled {
+                        background: #e2e8f0; /* Filled segment */
+                    }
+                    .footer-note {
+                        color: #787c99;
+                        font-size: 0.95rem;
+                        margin-top: 24px;
+                        margin-left: 4px;
+                    }
                     .actions {
                         margin-top: 40px;
                         padding-top: 20px;
@@ -848,12 +875,16 @@ function activate(context) {
                         background: #3d59a1;
                         color: white;
                         border: none;
-                        padding: 12px 28px;
-                        border-radius: 6px;
-                        font-weight: 600;
+                        padding: 6px 14px;
+                        border-radius: 4px;
+                        font-weight: 500;
+                        font-size: 0.9rem;
                         cursor: pointer;
-                        font-size: 1rem;
                         transition: all 0.2s;
+                        display: flex;
+                        justify-content: center;
+                        align-items: center;
+                        gap: 4px;
                     }
                     .switch-btn:hover {
                         background: #4e6bbd;
@@ -1073,7 +1104,7 @@ function activate(context) {
                     </div>
                 </div>
                 <div class="content">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                         <h2 style="margin: 0">
                             ${this.selectedProfile === 'Dashboard' ? `Accounts Overview: ${this.searchQuery ? `${filteredStats.length} of ${stats.length}` : stats.length} Saved Accounts` : 
                                 (() => {
@@ -1093,8 +1124,8 @@ function activate(context) {
                                     oninput="search(this.value)" id="searchInput"
                                     onfocus="var val=this.value; this.value=''; this.value=val;">
                             ` : ''}
-                            <button class="btn-icon" title="Add Account" onclick="addAccount()">+</button>
-                            <button class="btn-icon ${this.deleteMode ? 'active' : ''}" title="Toggle Remove Mode" onclick="toggleDeleteMode()">-</button>
+                            <button class="btn-icon" title="Refresh UI" onclick="refreshData()">🔄</button>
+                            ${this.selectedProfile !== 'Dashboard' ? `<button class="btn-icon" title="Add Account" onclick="addAccount()">+</button><button class="btn-icon ${this.deleteMode ? 'active' : ''}" title="Toggle Remove Mode" onclick="toggleDeleteMode()">-</button>` : ''}
                             ${!isActiveProfile && this.selectedProfile && this.selectedProfile !== 'Dashboard' ? `<button class="switch-btn" style="margin-left:8px" onclick="switchAccount('${this.selectedProfile}')">🚀 Switch</button>` : ''}
                         </div>
                     </div>
@@ -1164,22 +1195,35 @@ function activate(context) {
                     return 10;
                 };
 
+                html += '<div class="model-box-title">MODEL QUOTA</div><div class="model-box">';
                 const sortedModels = [...profileData.models].sort((a, b) => getPriority(a) - getPriority(b));
                 for (const m of sortedModels) {
                     const pct = Math.round(m.remainingPercentage);
-                    const color = pct > 50 ? '#22c55e' : (pct > 20 ? '#eab308' : '#ef4444');
+                    const isWarning = pct <= 20 || m.displayName.includes('(Thinking)');
+                    const segments = 5;
+                    const filledSegments = Math.round((pct / 100) * segments);
+                    
+                    let segmentsHtml = '<div class="segments-container">';
+                    for (let i = 0; i < segments; i++) {
+                        segmentsHtml += `<div class="segment ${i < filledSegments ? 'filled' : ''}"></div>`;
+                    }
+                    segmentsHtml += '</div>';
+
+                    // Replace "Resets in: " with "Refreshes in " to match UI exact phrasing
+                    let refreshStr = mgr.formatDelta(m.resetTime, false);
+                    refreshStr = refreshStr.replace('d', ' days,').replace('h', ' hours').replace('m', ' minutes');
+                    
                     html += `
                     <div class="model-row">
                         <div class="header">
-                            <span class="model-name">${m.displayName}</span>
-                            <span class="percentage">${pct}%</span>
+                            <span class="model-name">${m.displayName} ${isWarning ? '<span class="warning-icon">⚠️</span>' : ''}</span>
+                            <span class="reset-text">Refreshes in ${refreshStr}</span>
                         </div>
-                        <div class="bar-container">
-                            <div class="bar" style="width: ${pct}%; background: ${color}; box-shadow: 0 0 10px ${color}44;"></div>
-                        </div>
-                        <div class="reset-text">Resets in: ${mgr.formatDelta(m.resetTime, false)}</div>
+                        ${segmentsHtml}
                     </div>`;
                 }
+                html += '</div>';
+                html += '<div class="footer-note">View your available model quota. Quota refreshes periodically based on your plan.</div>';
             } else {
                 html += '<p style="text-align:center; padding: 60px; color: #565f89; border: 1px dashed #24283b; border-radius: 12px;">No telemetry data available for this account.<br><br>Switch to it and perform a scan to collect details.</p>';
             }
@@ -1207,6 +1251,9 @@ function activate(context) {
                     }
                     function editEmail(name) {
                         vscode.postMessage({ command: 'editEmail', profile: name });
+                    }
+                    function refreshData() {
+                        vscode.postMessage({ command: 'refreshData' });
                     }
                     function renameAccount(name) {
                         vscode.postMessage({ command: 'renameAccount', profile: name });
