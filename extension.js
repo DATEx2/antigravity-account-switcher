@@ -819,53 +819,28 @@ function activate(context) {
                         align-items: center;
                         gap: 10px;
                     }
-                    .model-box {
-                        border: 1px solid rgba(255,255,255,0.06);
-                        border-radius: 8px;
-                        padding: 24px;
-                        background: rgba(255,255,255,0.02);
-                        margin-top: 20px;
-                    }
-                    .model-box-title {
-                        color: #787c99;
-                        font-size: 0.8rem;
-                        text-transform: uppercase;
-                        letter-spacing: 0.5px;
-                        margin-bottom: 24px;
-                        font-weight: 600;
-                    }
-                    .model-row { margin-bottom: 24px; }
-                    .model-row:last-child { margin-bottom: 0; }
+                    .model-row { margin-bottom: 12px; }
                     .header { 
                         display: flex; 
                         justify-content: space-between; 
-                        align-items: center;
-                        margin-bottom: 12px;
+                        align-items: flex-end;
+                        margin-bottom: 4px;
                     }
-                    .model-name { font-weight: 500; font-size: 1.05rem; color: #e2e8f0; display: flex; align-items: center; gap: 6px; }
-                    .warning-icon { color: #f59e0b; font-size: 0.9rem; }
-                    .reset-text { font-size: 0.95rem; color: #94a3b8; }
-                    .segments-container {
-                        display: flex;
-                        gap: 6px;
-                        height: 4px;
-                        width: 100%;
+                    .model-name { font-weight: 500; font-size: 0.95rem; color: #c0caf5; }
+                    .percentage { font-weight: 600; font-size: 0.95rem; color: #ffffff; }
+                    .bar-container { 
+                        height: 4px; 
+                        background: #24283b; 
+                        border-radius: 2px; 
+                        overflow: hidden;
+                        margin-bottom: 3px;
                     }
-                    .segment {
-                        flex: 1;
-                        background: rgba(255,255,255,0.08); /* Empty segment */
+                    .bar { 
+                        height: 100%; 
+                        transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
                         border-radius: 2px;
-                        transition: background 0.3s;
                     }
-                    .segment.filled {
-                        background: #e2e8f0; /* Filled segment */
-                    }
-                    .footer-note {
-                        color: #787c99;
-                        font-size: 0.95rem;
-                        margin-top: 24px;
-                        margin-left: 4px;
-                    }
+                    .reset-text { font-size: 0.78rem; color: #565f89; }
                     .actions {
                         margin-top: 40px;
                         padding-top: 20px;
@@ -1197,35 +1172,22 @@ function activate(context) {
                     return 10;
                 };
 
-                html += '<div class="model-box-title">MODEL QUOTA</div><div class="model-box">';
                 const sortedModels = [...profileData.models].sort((a, b) => getPriority(a) - getPriority(b));
                 for (const m of sortedModels) {
                     const pct = Math.round(m.remainingPercentage);
-                    const isWarning = pct <= 20 || m.displayName.includes('(Thinking)');
-                    const segments = 5;
-                    const filledSegments = Math.round((pct / 100) * segments);
-                    
-                    let segmentsHtml = '<div class="segments-container">';
-                    for (let i = 0; i < segments; i++) {
-                        segmentsHtml += `<div class="segment ${i < filledSegments ? 'filled' : ''}"></div>`;
-                    }
-                    segmentsHtml += '</div>';
-
-                    // Replace "Resets in: " with "Refreshes in " to match UI exact phrasing
-                    let refreshStr = mgr.formatDelta(m.resetTime, false);
-                    refreshStr = refreshStr.replace('d', ' days,').replace('h', ' hours').replace('m', ' minutes');
-                    
+                    const color = pct > 50 ? '#22c55e' : (pct > 20 ? '#eab308' : '#ef4444');
                     html += `
                     <div class="model-row">
                         <div class="header">
-                            <span class="model-name">${m.displayName} ${isWarning ? '<span class="warning-icon">⚠️</span>' : ''}</span>
-                            <span class="reset-text">Refreshes in ${refreshStr}</span>
+                            <span class="model-name">${m.displayName}</span>
+                            <span class="percentage">${pct}%</span>
                         </div>
-                        ${segmentsHtml}
+                        <div class="bar-container">
+                            <div class="bar" style="width: ${pct}%; background: ${color}; box-shadow: 0 0 10px ${color}44;"></div>
+                        </div>
+                        <div class="reset-text">Resets in: ${mgr.formatDelta(m.resetTime, false)}</div>
                     </div>`;
                 }
-                html += '</div>';
-                html += '<div class="footer-note">View your available model quota. Quota refreshes periodically based on your plan.</div>';
             } else {
                 html += '<p style="text-align:center; padding: 60px; color: #565f89; border: 1px dashed #24283b; border-radius: 12px;">No telemetry data available for this account.<br><br>Switch to it and perform a scan to collect details.</p>';
             }
