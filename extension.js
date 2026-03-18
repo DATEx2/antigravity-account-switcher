@@ -6,7 +6,17 @@ const https = require('https');
 
 /**
  * Antigravity Multi-Account Switcher
- * Final Version 2.8.0
+ * Final Version 2.14.0
+- Added Quota Evolution Chart (History & Forecast)
+- Fixed tab bar scrollbar (Dashboard tab is now properly isolated)
+- Added horizontal scrolling to tab bar with mouse wheel
+- Made Dashboard tab fixed (sticky) while other tabs scroll
+- Isolated account-specific details (globalStorage) to keep settings and history global
+- Fixed data loss issues during account switching
+- Updated status bar tooltips to clarify shared settings
+- Added compatibility for legacy full-profile folders
+
+### 2.12.0
  * 
  * Features:
  * - 5 colorful profile slot buttons for one-click account switching
@@ -17,16 +27,17 @@ const https = require('https');
  * @param {vscode.ExtensionContext} context
  */
 function activate(context) {
-    console.log('Antigravity Account Switcher v2.8.0 is now active - Full workspace state persistence');
+    console.log('Antigravity Account Switcher v2.13.3 is now active - Full workspace state persistence');
 
     const scriptPath = path.join(context.extensionPath, 'scripts', 'profile_manager.ps1');
-    const NUM_SLOTS = 20;
+    const NUM_SLOTS = 2000;
 
     // Files for storage (in AppData/Antigravity)
     const ANTIGRAVITY_BASE_DIR = path.join(process.env.APPDATA || '', 'Antigravity');
     const ACTIVE_PROFILE_FILE = path.join(ANTIGRAVITY_BASE_DIR, 'active_profile.txt');
     const PENDING_STATE_FILE = path.join(ANTIGRAVITY_BASE_DIR, 'pending_state.json');
     const QUOTA_CACHE_FILE = path.join(ANTIGRAVITY_BASE_DIR, 'profiles_quota.json');
+    const QUOTA_HISTORY_FILE = path.join(ANTIGRAVITY_BASE_DIR, 'profiles_history.json');
 
     /**
      * Quota Manager - Handles fetching and caching model quotas from Antigravity Language Server
@@ -34,8 +45,20 @@ function activate(context) {
     class QuotaManager {
         constructor() {
             this.cache = this.loadCache();
+            this.history = this.loadHistory();
             this.currentConnection = null;
             this.isFetching = false;
+        }
+
+        loadHistory() {
+            try {
+                if (fs.existsSync(QUOTA_HISTORY_FILE)) {
+                    return JSON.parse(fs.readFileSync(QUOTA_HISTORY_FILE, 'utf8'));
+                }
+            } catch (e) {
+                console.error('Error loading history:', e);
+            }
+            return {};
         }
 
         loadCache() {
@@ -55,8 +78,49 @@ function activate(context) {
                     fs.mkdirSync(ANTIGRAVITY_BASE_DIR, { recursive: true });
                 }
                 fs.writeFileSync(QUOTA_CACHE_FILE, JSON.stringify(this.cache, null, 2), 'utf8');
+                this.saveHistory();
             } catch (e) {
                 console.error('Error saving quota cache:', e);
+            }
+        }
+
+        saveHistory() {
+            try {
+                // Record snapshots for each profile in current cache
+                const now = new Date();
+                const snapshotTimestamp = now.toISOString();
+
+                for (const [profileName, data] of Object.entries(this.cache)) {
+                    if (!data.models || data.models.length === 0) continue;
+
+                    if (!this.history[profileName]) this.history[profileName] = [];
+                    const history = this.history[profileName];
+                    const lastEntry = history.length > 0 ? history[history.length - 1] : null;
+
+                    // Only save if significant time passed (1h) or if it's the first entry
+                    const lastTime = lastEntry ? new Date(lastEntry.timestamp).getTime() : 0;
+                    const oneHour = 60 * 60 * 1000;
+
+                    if (now.getTime() - lastTime > oneHour || !lastEntry) {
+                        history.push({
+                            timestamp: snapshotTimestamp,
+                            models: data.models.map(m => ({
+                                name: m.name,
+                                pct: m.remainingPercentage,
+                                reset: m.resetTime
+                            }))
+                        });
+
+                        // Keep last 30 days (assuming roughly 24 snapshots/day = 720 entries)
+                        if (history.length > 1000) {
+                            this.history[profileName] = history.slice(-1000);
+                        }
+                    }
+                }
+
+                fs.writeFileSync(QUOTA_HISTORY_FILE, JSON.stringify(this.history, null, 2), 'utf8');
+            } catch (e) {
+                console.error('Error saving history:', e);
             }
         }
 
@@ -294,23 +358,68 @@ function activate(context) {
                     const req = https.request(options, (res) => {
                         let body = '';
                         res.on('data', chunk => body += chunk);
-                        res.on('end', () => {
+                        res.on('end', async () => {
                             this.isFetching = false;
                             if (res.statusCode === 200) {
                                 try {
                                     const parsed = JSON.parse(body);
                                     const processed = this.processQuotaResponse(parsed);
-                                    const activeProfile = getActiveProfile();
+                                    let activeProfile = getActiveProfile();
+                                    
+                                    if (processed && processed.email) {
+                                        const profiles = await getProfiles();
+                                        const processedEmail = processed.email.toLowerCase();
+                                        const activeProfileData = profiles.find(p => (p.Name || p.name).toLowerCase() === (activeProfile || '').toLowerCase());
+                                        const anyProfileMatch = profiles.find(p => p.Email && p.Email.toLowerCase() === processedEmail);
+                                        
+                                        if (activeProfile !== 'Guest') {
+                                            if (activeProfileData && activeProfileData.Email && activeProfileData.Email.toLowerCase() !== processedEmail) {
+                                                if (anyProfileMatch) {
+                                                    activeProfile = anyProfileMatch.Name || anyProfileMatch.name;
+                                                    setActiveProfile(activeProfile);
+                                                } else {
+                                                    activeProfile = 'Guest';
+                                                    setActiveProfile(activeProfile);
+                                                    vscode.window.showInformationMessage(`New account detected (${processed.email}). Save as profile?`, 'Save', 'Dismiss').then(res => {
+                                                        if (res === 'Save') {
+                                                            vscode.commands.executeCommand('antigravity-switcher.saveProfile');
+                                                        }
+                                                    });
+                                                }
+                                            } else if (!activeProfileData) {
+                                                if (anyProfileMatch) {
+                                                    activeProfile = anyProfileMatch.Name || anyProfileMatch.name;
+                                                    setActiveProfile(activeProfile);
+                                                } else {
+                                                    activeProfile = 'Guest';
+                                                    setActiveProfile(activeProfile);
+                                                    vscode.window.showInformationMessage(`New account detected (${processed.email}). Save as profile?`, 'Save', 'Dismiss').then(res => {
+                                                        if (res === 'Save') {
+                                                            vscode.commands.executeCommand('antigravity-switcher.saveProfile');
+                                                        }
+                                                    });
+                                                }
+                                            } else if (activeProfileData && !activeProfileData.Email && !anyProfileMatch) {
+                                                await runProfileManager('SetEmail', activeProfileData.Name || activeProfileData.name, '', processed.email);
+                                                clearProfilesCache();
+                                            }
+                                        }
+                                    }
+
                                     if (activeProfile && processed) {
                                         this.cache[activeProfile] = processed;
                                         this.saveCache();
                                         resolve(processed);
+                                    } else {
+                                        resolve(null);
                                     }
                                 } catch (e) {
                                     console.error('Error parsing quota JSON:', e);
+                                    resolve(null);
                                 }
+                            } else {
+                                resolve(null);
                             }
-                            resolve(null);
                         });
                     });
 
@@ -333,6 +442,8 @@ function activate(context) {
             const modelConfigs = response.userStatus.cascadeModelConfigData?.clientModelConfigs || [];
             const result = {
                 timestamp: new Date().toISOString(),
+                email: response.userStatus.email,
+                name: response.userStatus.name,
                 models: []
             };
 
@@ -375,7 +486,7 @@ function activate(context) {
             return `${seconds}s`;
         }
 
-        buildTooltip(profileName) {
+        buildTooltip(profileName, email = '') {
             const data = this.cache[profileName];
             const md = new vscode.MarkdownString();
             md.isTrusted = true;
@@ -384,7 +495,9 @@ function activate(context) {
             const active = getActiveProfile();
             const isActive = active && active.toLowerCase() === profileName.toLowerCase();
 
-            md.appendMarkdown(`### ${isActive ? '✅ ' : '👤 '}${profileName}\n\n`);
+            md.appendMarkdown(`### ${isActive ? '✅ ' : '👤 '}${profileName}\n`);
+            if (email) md.appendMarkdown(`**${email}**\n\n`);
+            else md.appendMarkdown(`\n`);
 
             if (!data || !data.models || data.models.length === 0) {
                 md.appendMarkdown(`*No telemetry data for this account.*\n\n[ ⚡ Switch & Scan ](command:antigravity-switcher.switchAccountExplicit?${encodeURIComponent(JSON.stringify(profileName))})`);
@@ -420,6 +533,9 @@ function activate(context) {
             this.panel = null; 
             this.selectedProfile = null;
             this.deleteMode = false;
+            this.sortColumn = 'overallPct';
+            this.sortDirection = 'desc';
+            this.searchQuery = '';
         }
 
         async show(mgr, profile = null) {
@@ -475,6 +591,17 @@ function activate(context) {
                 } else if (msg.command === 'editEmail') {
                     await vscode.commands.executeCommand('antigravity-switcher.setEmail', msg.profile);
                     await this.update(mgr);
+                } else if (msg.command === 'sort') {
+                    if (this.sortColumn === msg.column) {
+                        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+                    } else {
+                        this.sortColumn = msg.column;
+                        this.sortDirection = 'desc';
+                    }
+                    await this.update(mgr);
+                } else if (msg.command === 'search') {
+                    this.searchQuery = msg.query;
+                    await this.update(mgr);
                 }
             });
 
@@ -491,8 +618,109 @@ function activate(context) {
                 this.selectedProfile = 'Dashboard';
             }
 
+            const getEmailMeta = (email) => {
+                if (!email) return { bg: 'transparent', color: '#7aa2f7' };
+                const domain = email.split('@')[1]?.toLowerCase();
+                if (!domain) return { bg: 'transparent', color: '#7aa2f7' };
+                
+                let bg = 'transparent';
+                let color = '#7aa2f7';
+                
+                if (domain === 'datex2.bike') {
+                    bg = 'rgba(34, 197, 94, 0.15)'; 
+                    color = '#22c55e';
+                } else if (domain === 'gmail.com') {
+                    bg = 'transparent';
+                    color = '#7aa2f7';
+                } else if (domain.includes('outlook') || domain.includes('hotmail') || domain.includes('msn') || domain.includes('live')) {
+                    bg = 'rgba(61, 89, 161, 0.15)';
+                    color = '#7aa2f7';
+                } else if (domain.includes('yahoo')) {
+                    bg = 'rgba(187, 154, 247, 0.15)';
+                    color = '#bb9af7';
+                } else {
+                    bg = 'rgba(169, 177, 214, 0.1)';
+                    color = '#a9b1d6';
+                }
+                return { bg, color };
+            };
+
+            const getEmailStyle = (meta) => {
+                const { bg, color } = meta;
+                return `color: ${color}; padding: 1px 6px; border-radius: 4px; border: 1px solid ${bg === 'transparent' ? 'transparent' : 'rgba(255,255,255,0.05)'};`;
+            };
+
             const profileData = mgr.cache[this.selectedProfile];
             const isActiveProfile = active && this.selectedProfile && active.toLowerCase() === this.selectedProfile.toLowerCase();
+
+            let stats = [];
+            let filteredStats = [];
+            if (this.selectedProfile === 'Dashboard') {
+                stats = profiles.map(p => {
+                    const name = p.Name || p.name;
+                    const data = mgr.cache[name];
+                    const isActive = active && name.toLowerCase() === active.toLowerCase();
+                    
+                    let overallPct = 0;
+                    let nextReset = Infinity;
+                    let nextResetStr = 'Ready';
+                    
+                    if (data && data.models && data.models.length > 0) {
+                        const modelsToAvg = data.models;
+                        overallPct = modelsToAvg.reduce((sum, m) => sum + (m.remainingPercentage || 0), 0) / modelsToAvg.length;
+                        
+                        const resetable = data.models.filter(m => m.resetTime);
+                        if (resetable.length > 0) {
+                            const times = resetable.map(m => new Date(m.resetTime).getTime());
+                            nextReset = Math.min(...times);
+                            const now = Date.now();
+                            if (nextReset > now) {
+                                nextResetStr = mgr.formatDelta(new Date(nextReset).toISOString(), false);
+                            } else {
+                                nextResetStr = 'Ready';
+                            }
+                        } else {
+                            nextResetStr = 'Ready';
+                        }
+                    }
+                    
+                    return { 
+                        name, 
+                        email: p.Email || (data && data.email) || '', 
+                        domain: (p.Email || (data && data.email) || '').includes('@') ? (p.Email || (data && data.email) || '').split('@')[1].toLowerCase() : '',
+                        overallPct, 
+                        nextReset, 
+                        nextResetStr, 
+                        isActive,
+                        timestamp: data ? new Date(data.timestamp).getTime() : 0,
+                        lastRefresh: data ? new Date(data.timestamp).toLocaleString() : 'Never'
+                    };
+                });
+                
+                // Dynamic Sorting & Filtering
+                filteredStats = stats.filter(s => {
+                    if (!this.searchQuery) return true;
+                    const query = this.searchQuery.toLowerCase();
+                    return s.name.toLowerCase().includes(query) || (s.email && s.email.toLowerCase().includes(query));
+                });
+
+                filteredStats.sort((a, b) => {
+                    let valA, valB;
+                    switch(this.sortColumn) {
+                        case 'name': valA = a.name.toLowerCase(); valB = b.name.toLowerCase(); break;
+                        case 'email': valA = (a.email || '').toLowerCase(); valB = (b.email || '').toLowerCase(); break;
+                        case 'domain': valA = a.domain; valB = b.domain; break;
+                        case 'overallPct': valA = a.overallPct; valB = b.overallPct; break;
+                        case 'nextReset': valA = a.nextReset; valB = b.nextReset; break;
+                        case 'status': valA = a.timestamp; valB = b.timestamp; break;
+                        default: valA = a.overallPct; valB = b.overallPct;
+                    }
+                    
+                    if (valA < valB) return this.sortDirection === 'asc' ? -1 : 1;
+                    if (valA > valB) return this.sortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
 
             let html = `
             <!DOCTYPE html>
@@ -509,18 +737,23 @@ function activate(context) {
                         display: flex;
                         flex-direction: column;
                     }
-                    .tabs {
+                    .tabs-container {
                         display: flex;
                         background: #16161e;
-                        padding: 10px 20px 0 20px;
                         border-bottom: 1px solid #414868;
+                    }
+                    .tabs-scrollable {
+                        display: flex;
+                        flex: 1;
                         gap: 2px;
                         overflow-x: auto;
+                        overflow-y: hidden;
+                        padding: 10px 20px 0 10px;
                     }
                     .tab {
                         padding: 10px 18px;
                         background: #24283b;
-                        color: #565f89;
+                        color: #a9b1d6;
                         border-radius: 6px 6px 0 0;
                         cursor: pointer;
                         font-weight: 500;
@@ -536,11 +769,26 @@ function activate(context) {
                     }
                     .tab.selected {
                         background: #1a1b26;
-                        color: #ffffff;
+                        color: #ffffff; /* Improved contrast */
                         border-color: #414868;
                         position: relative;
                         bottom: -1px;
-                        z-index: 10;
+                        z-index: 110;
+                    }
+                    .tab-fixed {
+                        flex: 0 0 auto;
+                        background: #16161e;
+                        border-right: 1px solid #414868;
+                        z-index: 100;
+                        box-shadow: 10px 0 15px -5px rgba(0,0,0,0.5);
+                        padding: 0 20px !important;
+                        display: flex;
+                        align-items: flex-end;
+                        background: #16161e !important;
+                    }
+                    .tab-fixed .tab {
+                        border-right: none;
+                        border-radius: 6px 6px 0 0;
                     }
                     .active-indicator {
                         display: inline-block;
@@ -640,8 +888,14 @@ function activate(context) {
                         font-size: 0.95rem;
                         vertical-align: middle;
                     }
-                    tr:hover td {
-                        background: #16161e;
+                    tr {
+                        transition: background 0.2s;
+                    }
+                    tr:hover {
+                        background: #24283b !important;
+                    }
+                    tr:hover td, td {
+                        background: transparent !important;
                     }
                     .pct-cell {
                         font-weight: 600;
@@ -658,8 +912,11 @@ function activate(context) {
                         border-radius: 50%;
                         margin-right: 10px;
                     }
+                    tr.row-active {
+                        background: #1e2237 !important;
+                    }
                     tr.row-active td {
-                        background: #1e2237;
+                        background: transparent !important;
                     }
                     tr.row-active td:first-child {
                         box-shadow: inset 3px 0 0 #7aa2f7;
@@ -679,6 +936,12 @@ function activate(context) {
                     .editable-email:hover {
                         color: #7aa2f7;
                         border-bottom-color: #7aa2f7;
+                    }
+                    .readonly-email {
+                        font-size: 0.8rem;
+                        color: #7aa2f7;
+                        display: inline-block;
+                        cursor: default;
                     }
                     .btn-icon {
                         background: #24283b;
@@ -741,36 +1004,90 @@ function activate(context) {
                         gap: 8px;
                         justify-content: flex-end;
                     }
+                    .search-input {
+                        background: #16161e;
+                        color: #c0caf5;
+                        border: 1px solid #414868;
+                        padding: 8px 12px;
+                        border-radius: 4px;
+                        font-size: 0.9rem;
+                        width: 250px;
+                        transition: all 0.2s;
+                        margin-right: 10px;
+                    }
+                    .search-input:focus {
+                        outline: none;
+                        border-color: #7aa2f7;
+                        background: #1a1b26;
+                    }
+                    .search-input::placeholder {
+                        color: #565f89;
+                    }
                 </style>
             </head>
             <body>
-                <div class="tabs">
-                    <div class="tab ${this.selectedProfile === 'Dashboard' ? 'selected' : ''}" onclick="selectTab('Dashboard')">
+                <div class="tabs-container">
+                    <div class="tab tab-fixed ${this.selectedProfile === 'Dashboard' ? 'selected' : ''}" onclick="selectTab('Dashboard')">
                         📊 Dashboard
                     </div>
-                    ${profiles
-                        .map(p => ({ 
-                            name: p.Name || p.name, 
-                            score: mgr.getAvailabilityScore(p.Name || p.name) 
-                        }))
+                    <div class="tabs-scrollable" onwheel="if (event.deltaY !== 0) { this.scrollLeft += event.deltaY; event.preventDefault(); }">
+                        ${profiles
+                        .map(p => {
+                            const name = p.Name || p.name;
+                            const data = mgr.cache[name];
+                            let shortReset = '';
+                            if (data && data.models) {
+                                const resetable = data.models.filter(m => m.resetTime);
+                                if (resetable.length > 0) {
+                                    const nextReset = Math.min(...resetable.map(m => new Date(m.resetTime).getTime()));
+                                    if (nextReset > Date.now()) {
+                                        shortReset = mgr.formatDelta(new Date(nextReset).toISOString(), true);
+                                    } else {
+                                        shortReset = 'Ready'; // Always show 'Ready' if reset time is past
+                                    }
+                                }
+                            }
+                            return { 
+                                name, 
+                                prefix: mgr.getAvailabilityPrefix(name).trim(),
+                                shortReset: shortReset,
+                                score: mgr.getAvailabilityScore(name) 
+                            };
+                        })
                         .sort((a, b) => b.score - a.score)
                         .map(p => {
                             const pName = p.name;
                             const isCurrent = active && active.toLowerCase() === pName.toLowerCase();
                             const isSelected = this.selectedProfile && this.selectedProfile.toLowerCase() === pName.toLowerCase();
+                            const infoContrast = isSelected ? '#a9b1d6' : '#565f89';
+                            const info = (p.prefix || p.shortReset) ? `<span style="font-size: 0.7rem; color: ${infoContrast}; margin-left: 4px;">${p.prefix}${p.prefix && p.shortReset ? ' | ' : ''}${p.shortReset}</span>` : '';
                             return `<div class="tab ${isSelected ? 'selected' : ''}" onclick="selectTab('${pName}')">
-                                ${isCurrent ? '<span class="active-indicator"></span>' : ''} ${pName}
+                                ${isCurrent ? '<span class="active-indicator"></span>' : ''} ${pName} ${info}
                             </div>`;
                         }).join('')}
+                    </div>
                 </div>
                 <div class="content">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
                         <h2 style="margin: 0">
-                            ${this.selectedProfile === 'Dashboard' ? 'Accounts Overview' : 
-                                `<span class="editable-title" title="Click to rename" onclick="renameAccount('${this.selectedProfile}')">${this.selectedProfile}</span>`}
-                            ${isActiveProfile ? '<span class="active-badge">Currently Active</span>' : ''}
+                            ${this.selectedProfile === 'Dashboard' ? `Accounts Overview: ${this.searchQuery ? `${filteredStats.length} of ${stats.length}` : stats.length} Saved Accounts` : 
+                                (() => {
+                                    const pInfo = profiles.find(p => (p.Name || p.name).toLowerCase() === this.selectedProfile.toLowerCase()) || {};
+                                    const inferredEmail = pInfo.Email || (mgr.cache[this.selectedProfile] && mgr.cache[this.selectedProfile].email) || '';
+                                    const meta = getEmailMeta(inferredEmail);
+                                    return `<div style="display: flex; flex-direction: column;">
+                                        <span class="editable-title" title="Click to rename" onclick="renameAccount('${this.selectedProfile}')">${this.selectedProfile}</span>
+                                        <span class="${inferredEmail ? 'readonly-email' : 'editable-email'}" style="margin-top: 4px; font-weight: normal; ${getEmailStyle(meta)}" ${inferredEmail ? '' : `title="Click to edit email" onclick="editEmail('${this.selectedProfile}')"`}>${inferredEmail || 'No email set'}</span>
+                                    </div>`;
+                                })()}
+                            ${isActiveProfile ? '<span class="active-badge" style="margin-left: 12px; align-self: center;">Currently Active</span>' : ''}
                         </h2>
                         <div class="header-actions">
+                            ${this.selectedProfile === 'Dashboard' ? `
+                                <input type="text" class="search-input" placeholder="Search accounts or emails..." value="${(this.searchQuery || '').replace(/"/g, '&quot;')}" 
+                                    oninput="search(this.value)" id="searchInput"
+                                    onfocus="var val=this.value; this.value=''; this.value=val;">
+                            ` : ''}
                             <button class="btn-icon" title="Add Account" onclick="addAccount()">+</button>
                             <button class="btn-icon ${this.deleteMode ? 'active' : ''}" title="Toggle Remove Mode" onclick="toggleDeleteMode()">-</button>
                         </div>
@@ -778,73 +1095,44 @@ function activate(context) {
             `;
 
             if (this.selectedProfile === 'Dashboard') {
-                // RENDER DASHBOARD TAB (Aggregation)
-                const stats = profiles.map(p => {
-                    const name = p.Name || p.name;
-                    const data = mgr.cache[name];
-                    const isActive = active && name.toLowerCase() === active.toLowerCase();
-                    
-                    let overallPct = 0;
-                    let nextReset = Infinity;
-                    let nextResetStr = 'Ready';
-                    
-                    if (data && data.models && data.models.length > 0) {
-                        const modelsToAvg = data.models;
-                        overallPct = modelsToAvg.reduce((sum, m) => sum + (m.remainingPercentage || 0), 0) / modelsToAvg.length;
-                        
-                        const resetable = data.models.filter(m => m.resetTime && m.remainingPercentage < 98);
-                        if (resetable.length > 0) {
-                            const times = resetable.map(m => new Date(m.resetTime).getTime());
-                            nextReset = Math.min(...times);
-                            const now = Date.now();
-                            if (nextReset > now) {
-                                nextResetStr = mgr.formatDelta(new Date(nextReset).toISOString(), false);
-                            } else {
-                                nextResetStr = 'Ready';
-                            }
-                        } else {
-                            nextResetStr = overallPct >= 95 ? 'Full' : 'Ready';
-                        }
-                    }
-                    
-                    return { name, email: p.Email || '', overallPct, nextReset, nextResetStr, isActive };
-                });
-                
-                // Sort by Overall % (Descending) then Next Reset (Ascending)
-                stats.sort((a, b) => {
-                    const pctDiff = Math.round(b.overallPct) - Math.round(a.overallPct);
-                    if (pctDiff !== 0) return pctDiff;
-                    return a.nextReset - b.nextReset;
-                });
-                
                 html += `
                 <table>
                     <thead>
                         <tr>
-                            <th>Account Name</th>
-                            <th>Status</th>
-                            <th>Overall %</th>
-                            <th>Next Reset</th>
+                            <th style="user-select: none;">
+                                <span onclick="sortBy('name')" style="cursor:pointer; color: ${this.sortColumn === 'name' ? '#ffffff' : '#565f89'}">NAME ${this.sortColumn === 'name' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
+                                <span style="color:#24283b; margin:0 4px">|</span>
+                                <span onclick="sortBy('email')" style="cursor:pointer; color: ${this.sortColumn === 'email' ? '#ffffff' : '#565f89'}">EMAIL ${this.sortColumn === 'email' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
+                                <span style="color:#24283b; margin:0 4px">|</span>
+                                <span onclick="sortBy('domain')" style="cursor:pointer; color: ${this.sortColumn === 'domain' ? '#ffffff' : '#565f89'}">DOMAIN ${this.sortColumn === 'domain' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</span>
+                            </th>
+                            <th onclick="sortBy('status')" style="cursor:pointer">Last Refresh ${this.sortColumn === 'status' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</th>
+                            <th onclick="sortBy('overallPct')" style="cursor:pointer">Overall % ${this.sortColumn === 'overallPct' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</th>
+                            <th onclick="sortBy('nextReset')" style="cursor:pointer">Next Reset ${this.sortColumn === 'nextReset' ? (this.sortDirection === 'asc' ? '↑' : '↓') : ''}</th>
                             <th style="text-align: right">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${stats.map(s => {
-                            const color = s.overallPct > 50 ? '#22c55e' : (s.overallPct > 20 ? '#eab308' : '#ef4444');
-                            return `
-                            <tr class="${s.isActive ? 'row-active' : ''}" onclick="if(!event.target.closest('button')) selectTab('${s.name}')" style="cursor:pointer">
+                        ${filteredStats.map(s => {
+                                    const meta = getEmailMeta(s.email);
+                                    const color = s.overallPct > 50 ? '#22c55e' : (s.overallPct > 20 ? '#eab308' : '#ef4444');
+                                    return `
+                            <tr class="${s.isActive ? 'row-active' : ''}" onclick="if(!event.target.closest('button')) selectTab('${s.name}')" style="cursor:pointer; background: ${meta.bg}">
                                 <td>
                                     ${s.isActive ? '<span class="status-dot" style="background:#22c55e; box-shadow:0 0 5px #22c55e"></span>' : '<span class="status-dot" style="background:#414868"></span>'}
                                     <div style="display:inline-block; vertical-align:middle">
                                         <div style="${s.isActive ? 'font-weight:bold; color:#ffffff' : ''}">${s.name}</div>
-                                        <div class="editable-email" title="Click to edit email" onclick="editEmail('${s.name}')">
+                                        <div class="${s.email ? 'readonly-email' : 'editable-email'}" style="${getEmailStyle(meta)}" ${s.email ? '' : `title="Click to edit email" onclick="editEmail('${s.name}')"`}>
                                             ${s.email || 'No email set'}
                                         </div>
                                     </div>
                                 </td>
-                                <td>${s.isActive ? '<span style="color:#7aa2f7; font-size:0.8rem">ACTIVE</span>' : ''}</td>
+                                <td>
+                                    <div style="font-size: 0.8rem; color: #565f89;">${s.lastRefresh}</div>
+                                    ${s.isActive ? '<span style="color:#7aa2f7; font-size:0.75rem; font-weight:bold">ACTIVE</span>' : ''}
+                                </td>
                                 <td class="pct-cell" style="color:${color}">${Math.round(s.overallPct)}%</td>
-                                <td class="time-cell">${s.nextResetStr === 'Full' ? '<span style="color:#565f89">Available</span>' : (s.nextResetStr === 'Ready' ? '<span style="color:#7aa2f7">Ready</span>' : s.nextResetStr)}</td>
+                                <td class="time-cell">${s.nextResetStr === 'Ready' ? '<span style="color:#7aa2f7">Ready</span>' : s.nextResetStr}</td>
                                 <td>
                                     <div class="actions-cell">
                                         ${!s.isActive ? `<button class="inline-switch-btn" onclick="switchAccount('${s.name}')">Switch</button>` : ''}
@@ -922,6 +1210,21 @@ function activate(context) {
                     function renameAccount(name) {
                         vscode.postMessage({ command: 'renameAccount', profile: name });
                     }
+                    function sortBy(column) {
+                        vscode.postMessage({ command: 'sort', column: column });
+                    }
+                    function search(query) {
+                        vscode.postMessage({ command: 'search', query: query });
+                        // Focus persistence is handled by onfocus trick in input
+                    }
+                    
+                    // Maintain focus and cursor position after re-render
+                    window.addEventListener('load', () => {
+                        const searchInput = document.getElementById('searchInput');
+                        if (searchInput && "${(this.searchQuery || '').replace(/"/g, '\\"')}") {
+                            searchInput.focus();
+                        }
+                    });
                 </script>
             </body>
             </html>
@@ -1171,7 +1474,7 @@ function activate(context) {
     function runProfileManager(action, profileName = '', newProfileName = '', email = '') {
         return new Promise((resolve) => {
             const config = vscode.workspace.getConfiguration('antigravitySwitcher');
-            const maxProfiles = config.get('maxProfiles', 20);
+            const maxProfiles = config.get('maxProfiles', 2000);
             
             let args = `-Action ${action} -MaxProfiles ${maxProfiles}`;
             if (profileName) {
@@ -1367,7 +1670,7 @@ function activate(context) {
     // Save button (+ icon)
     const saveButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 500);
     saveButton.text = '$(add)';
-    saveButton.tooltip = 'Save current session as a new profile';
+    saveButton.tooltip = 'Save current account as a profile (Settings & History are shared)';
     saveButton.command = 'antigravity-switcher.saveProfile';
     context.subscriptions.push(saveButton);
 
@@ -1487,7 +1790,8 @@ function activate(context) {
                     btn.backgroundColor = undefined;
                 }
 
-                btn.tooltip = quotaManager.buildTooltip(name);
+                const email = profile.Email || (cachedData && cachedData.email) || '';
+                btn.tooltip = quotaManager.buildTooltip(name, email);
                 btn.show();
             } else {
                 btn.hide();
@@ -1540,9 +1844,15 @@ function activate(context) {
 
     // Command: Save Profile
     const saveCmd = vscode.commands.registerCommand('antigravity-switcher.saveProfile', async () => {
+        const activeName = getActiveProfile();
+        const activeData = quotaManager.cache[activeName];
+        const suggestedName = activeData ? activeData.name || '' : '';
+        const suggestedEmail = activeData ? activeData.email || '' : '';
+
         const profileName = await vscode.window.showInputBox({
-            prompt: 'Enter a name for this profile',
-            placeHolder: 'Profile name',
+            prompt: `Enter a name for this profile${suggestedEmail ? ` (${suggestedEmail})` : ''}`,
+            placeHolder: 'e.g. Work Account',
+            value: suggestedName,
             validateInput: (value) => {
                 if (!value || value.trim().length === 0) return 'Profile name cannot be empty';
                 return null;
@@ -1551,17 +1861,12 @@ function activate(context) {
 
         if (!profileName) return;
 
-        const email = await vscode.window.showInputBox({
-            prompt: 'Enter email address for this account (optional)',
-            placeHolder: 'Email address'
-        });
-
         await vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
             title: `Saving profile "${profileName}"...`,
             cancellable: false
         }, async () => {
-            const result = await runProfileManager('Save', profileName, '', email);
+            const result = await runProfileManager('Save', profileName, '', suggestedEmail);
             if (result.success) {
                 setActiveProfile(profileName);
                 await quotaManager.fetchQuota();

@@ -11,12 +11,12 @@
 .PARAMETER NewProfileName
     The new name for the profile (required for Rename)
 .PARAMETER MaxProfiles
-    Maximum number of profiles allowed (default: 20)
+    Maximum number of profiles allowed (default: unlimited)
 #>
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet("Save", "Load", "List", "Delete", "Rename")]
+    [ValidateSet("Save", "Load", "List", "Delete", "Rename", "SetEmail")]
     [string]$Action,
     
     [Parameter(Mandatory=$false)]
@@ -29,7 +29,7 @@ param(
     [string]$Email,
     
     [Parameter(Mandatory=$false)]
-    [int]$MaxProfiles = 20
+    [int]$MaxProfiles = 2000
 )
 
 # Configuration
@@ -59,7 +59,6 @@ function Get-Profiles {
                 Name = $_.Name
                 Email = $email
                 Created = $_.CreationTime.ToString("yyyy-MM-dd HH:mm")
-                Size = [math]::Round((Get-ChildItem $_.FullName -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB, 2)
             }
         }
     }
@@ -75,15 +74,6 @@ function Save-Profile {
         exit 1
     }
     
-    # Check profile limit
-    $existingProfiles = Get-Profiles
-    $profileExists = $existingProfiles | Where-Object { $_.Name -eq $Name }
-    
-    if (-not $profileExists -and $existingProfiles.Count -ge $MaxProfiles) {
-        Write-Error "Maximum profile limit ($MaxProfiles) reached. Delete a profile first."
-        exit 1
-    }
-    
     # Check if User Data exists
     if (-not (Test-Path $UserDataPath)) {
         Write-Error "User Data directory not found at: $UserDataPath"
@@ -91,15 +81,26 @@ function Save-Profile {
     }
     
     $targetPath = Join-Path $ProfilesStorePath $Name
+    $targetGlobalStorage = Join-Path $targetPath "globalStorage"
     
-    # Remove existing profile if it exists (overwrite)
-    if (Test-Path $targetPath) {
-        Remove-Item -Path $targetPath -Recurse -Force
+    # Ensure profile directory exists
+    if (-not (Test-Path $targetPath)) {
+        New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
+    } else {
+        # If it exists, we only want to refresh the globalStorage part
+        if (Test-Path $targetGlobalStorage) {
+            Remove-Item -Path $targetGlobalStorage -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
     
-    # Copy User Data to profile
-    Write-Host "Saving profile '$Name'..."
-    Copy-Item -Path $UserDataPath -Destination $targetPath -Recurse -Force
+    # Copy ONLY globalStorage to profile (Isolates account from settings/history)
+    $sourceGlobalStorage = Join-Path $UserDataPath "globalStorage"
+    if (Test-Path $sourceGlobalStorage) {
+        Write-Host "Saving account data for profile '$Name'..."
+        Copy-Item -Path $sourceGlobalStorage -Destination $targetGlobalStorage -Recurse -Force
+    } else {
+        Write-Warning "globalStorage not found in User directory. Profile might be incomplete."
+    }
 
     # Save extra info
     if ($Email) {
@@ -107,14 +108,15 @@ function Save-Profile {
         $info | ConvertTo-Json | Out-File (Join-Path $targetPath "profile_info.json") -Encoding utf8
     }
     
-    Write-Host "Profile '$Name' saved successfully."
-    Write-Output @{ Success = $true; Message = "Profile saved" } | ConvertTo-Json
+    Write-Host "Profile '$Name' (Account Data) saved successfully."
+    Write-Output @{ Success = $true; Message = "Account data saved" } | ConvertTo-Json
 }
 
 function Switch-Profile {
     param([string]$Name)
     
     $profilePath = Join-Path $ProfilesStorePath $Name
+    $sourceGlobalStorage = Join-Path $profilePath "globalStorage"
     
     if (-not (Test-Path $profilePath)) {
         Write-Error "Profile '$Name' not found"
@@ -139,35 +141,49 @@ function Switch-Profile {
         Start-Sleep -Seconds 3
     }
     
-    # Backup current User Data
-    $backupPath = "${UserDataPath}_switching_backup"
+    # Identify what to copy (compatibility with old full-user profiles)
+    $actualSource = $sourceGlobalStorage
+    if (-not (Test-Path $sourceGlobalStorage)) {
+        # If the profile doesn't have a globalStorage folder inside, maybe the profile ITSELF is a globalStorage folder?
+        # Or it's an old-style full profile. Let's check for state.vscdb in the root
+        if (Test-Path (Join-Path $profilePath "state.vscdb")) {
+            $actualSource = $profilePath
+        } else {
+            Write-Error "Profile '$Name' does not contain valid account data (globalStorage or state.vscdb)."
+            exit 1
+        }
+    }
+
+    # Target point
+    $targetGlobalStorage = Join-Path $UserDataPath "globalStorage"
+    
+    # Backup ONLY current globalStorage
+    $backupPath = "${targetGlobalStorage}_switching_backup"
     if (Test-Path $backupPath) {
         Remove-Item -Path $backupPath -Recurse -Force -ErrorAction SilentlyContinue
     }
     
-    if (Test-Path $UserDataPath) {
-        Write-Host "Backing up current session..."
-        Rename-Item -Path $UserDataPath -NewName "${UserDataPath}_switching_backup" -Force -ErrorAction SilentlyContinue
+    if (Test-Path $targetGlobalStorage) {
+        Write-Host "Backing up current account data..."
+        Rename-Item -Path $targetGlobalStorage -NewName $backupPath -Force -ErrorAction SilentlyContinue
     }
     
-    # Copy profile to User Data
-    Write-Host "Loading profile '$Name'..."
-    Copy-Item -Path $profilePath -Destination $UserDataPath -Recurse -Force
+    # Copy NEW account data to globalStorage
+    Write-Host "Loading account data from profile '$Name'..."
+    Copy-Item -Path $actualSource -Destination $targetGlobalStorage -Recurse -Force
     
     # Clean up backup in background
     if (Test-Path $backupPath) {
-        Start-Job -ScriptBlock { param($p) Start-Sleep -Seconds 5; Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue } -ArgumentList $backupPath | Out-Null
+        Start-Job -ScriptBlock { param($p) Start-Sleep -Seconds 10; Remove-Item -Path $p -Recurse -Force -ErrorAction SilentlyContinue } -ArgumentList $backupPath | Out-Null
     }
     
-    # Restart Antigravity using explorer.exe for truly detached process
-    Write-Host "Starting Antigravity..."
+    # Restart Antigravity
+    Write-Host "Restarting Antigravity..."
     Start-Sleep -Seconds 2
-    
-    # Method 1: Use explorer.exe to launch (most reliable for detached processes)
     Start-Process "explorer.exe" -ArgumentList "`"$exePath`""
     
-    Write-Host "Profile '$Name' loaded successfully."
-    @{ Success = $true; Message = "Profile loaded"; Restarted = $true } | ConvertTo-Json -Compress
+    Write-Host "Account switched to '$Name' successfully. Settings and history were preserved."
+    @{ Success = $true; Message = "Account switched"; Restarted = $true } | ConvertTo-Json -Compress
 }
 
 function Remove-Profile {
@@ -193,7 +209,7 @@ function List-Profiles {
         Write-Host "No profiles saved yet."
         $result = @{ Profiles = @(); Count = 0; MaxProfiles = $MaxProfiles }
     } else {
-        Write-Host "Saved Profiles ($count/$MaxProfiles):"
+        Write-Host "Saved Profiles ($count total):"
         Write-Host "-----------------------------------"
         foreach ($profile in $profiles) {
             Write-Host "  - $($profile.Name) (Created: $($profile.Created), Size: $($profile.Size) MB)"
