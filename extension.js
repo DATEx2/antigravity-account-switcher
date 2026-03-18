@@ -543,7 +543,7 @@ function activate(context) {
                 this.selectedProfile = profile;
             }
             if (this.panel) {
-                this.panel.reveal(vscode.ViewColumn.Two);
+                this.panel.reveal(vscode.ViewColumn.One);
                 await this.update(mgr);
                 return;
             }
@@ -551,7 +551,7 @@ function activate(context) {
             this.panel = vscode.window.createWebviewPanel(
                 'antigravityQuota',
                 'Antigravity Quota Dashboard',
-                vscode.ViewColumn.Two,
+                vscode.ViewColumn.One,
                 { enableScripts: true, retainContextWhenHidden: true }
             );
 
@@ -762,6 +762,9 @@ function activate(context) {
                         font-size: 0.9rem;
                         border: 1px solid transparent;
                         border-bottom: none;
+                        display: flex;
+                        align-items: center;
+                        gap: 6px;
                     }
                     .tab:hover {
                         color: #c0caf5;
