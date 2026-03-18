@@ -742,6 +742,7 @@ function activate(context) {
                         background: #16161e;
                         border-bottom: 1px solid #414868;
                         align-items: flex-end;
+                        padding-top: 10px;
                     }
                     .tabs-scrollable {
                         display: flex;
@@ -749,7 +750,8 @@ function activate(context) {
                         gap: 2px;
                         overflow-x: auto;
                         overflow-y: hidden;
-                        padding: 10px 20px 0 10px;
+                        padding: 0 20px 0 10px;
+                        align-items: flex-end;
                     }
                     .tab {
                         padding: 10px 18px;
@@ -785,7 +787,7 @@ function activate(context) {
                         border-right: 1px solid #414868;
                         z-index: 100;
                         box-shadow: 10px 0 15px -5px rgba(0,0,0,0.5);
-                        padding: 10px 20px 0 20px;
+                        padding: 0 20px;
                         display: flex;
                         align-items: flex-end;
                     }
@@ -804,39 +806,39 @@ function activate(context) {
                     }
                     .content {
                         flex: 1;
-                        padding: 30px;
+                        padding: 16px 24px;
                         overflow-y: auto;
                     }
                     h2 { 
                         color: #ffffff; 
-                        font-size: 1.6rem; 
-                        margin: 0 0 30px 0; 
+                        font-size: 1.3rem; 
+                        margin: 0 0 16px 0; 
                         display: flex;
                         align-items: center;
-                        gap: 12px;
+                        gap: 10px;
                     }
-                    .model-row { margin-bottom: 25px; }
+                    .model-row { margin-bottom: 12px; }
                     .header { 
                         display: flex; 
                         justify-content: space-between; 
                         align-items: flex-end;
-                        margin-bottom: 8px;
+                        margin-bottom: 4px;
                     }
-                    .model-name { font-weight: 500; font-size: 1.1rem; color: #c0caf5; }
-                    .percentage { font-weight: 600; font-size: 1.1rem; color: #ffffff; }
+                    .model-name { font-weight: 500; font-size: 0.95rem; color: #c0caf5; }
+                    .percentage { font-weight: 600; font-size: 0.95rem; color: #ffffff; }
                     .bar-container { 
-                        height: 6px; 
+                        height: 4px; 
                         background: #24283b; 
-                        border-radius: 3px; 
+                        border-radius: 2px; 
                         overflow: hidden;
-                        margin-bottom: 6px;
+                        margin-bottom: 3px;
                     }
                     .bar { 
                         height: 100%; 
                         transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-                        border-radius: 3px;
+                        border-radius: 2px;
                     }
-                    .reset-text { font-size: 0.85rem; color: #565f89; }
+                    .reset-text { font-size: 0.78rem; color: #565f89; }
                     .actions {
                         margin-top: 40px;
                         padding-top: 20px;
